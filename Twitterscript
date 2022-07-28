@@ -1,0 +1,111 @@
+library(rtweet)
+library(ggplot2)
+library(dplyr)
+library(maps)
+library(leaflet)
+library(tmaptools)
+library(ggwordcloud)
+library(tidytext)
+library(textdata)
+library(tidyquant)
+library(tidyr)
+library(stringr)
+library(plotly)
+
+### Configuration
+
+api_key <- "TfurwtZmw4k4V61YIbwtQPHTQ"
+api_secret_key <- "3hYjDw16hZ3g02gpgMPNkmADCRnjf0hfks0GHLp1lCqs2dnZfk"
+access_token <- "1538193864531619841-zvGVROL1xOttZQ3ThLvDudN4NSSBxG"
+access_secret <- "WKnhcMeDaaOHQAtNrlceID2bb8GHON5kiVwWjMCbwtCXD"
+
+token <- create_token(
+  app = "geoanalysis22",
+  consumer_key = api_key,
+  consumer_secret = api_secret_key,
+  access_token =access_token,
+  access_secret = access_secret
+  
+)
+
+token
+
+## Searching tweets
+
+#tweets_rune %>% saveRDS()
+
+newloc3 <- search_tweets(
+  q= "imran khan",
+  n = 1000,
+  lang = "en",
+  include_rts = FALSE
+  
+)
+
+
+## Search for tweet first
+
+tibbletweets <- as_tibble(newloc3)
+
+tweets_tokenized_tbl <- newloc3 %>% select(text) %>% tibble::rowid_to_column() %>%
+                        unnest_tokens(word, text)
+
+tweets_tokenized_tbl %>% count(word, sort = TRUE)
+
+## Sentiment dictionary 
+
+get_sentiments(lexicon = "bing")
+
+sentiment_bing_tbl <- tweets_tokenized_tbl %>% 
+                      inner_join(get_sentiments("bing"))
+
+sentiment_by_row_id_tbl <- sentiment_bing_tbl %>% 
+                           select(rowid, sentiment) %>% 
+                           count(rowid, sentiment) %>%
+                           pivot_wider(names_from = sentiment, values_from = n, values_fill= list(n=0)) %>%
+                           mutate(sentiment = positive - negative) %>%
+                           left_join(
+                             tibbletweets %>% select(screen_name, text, lat, long, location) %>% tibble::rowid_to_column()
+                           )
+## polarization chart
+
+label_wrap <- label_wrap_gen(width = 60)
+
+data_formatted <- sentiment_by_row_id_tbl %>%
+                  mutate(text_formatted = str_glue("Row ID: {rowid}
+                                                   Screen Name: {screen_name}
+                                                   Text: {label_wrap(text)}
+                                                   "))
+
+g <- data_formatted %>%
+     ggplot(aes(rowid, sentiment)) + geom_line(color = "#2c3e50", alpha = 0.5) +
+     geom_point(aes(text = text_formatted), color = "#2c3e50") + 
+     geom_smooth(method = "loess", span = 0.25, se= FALSE, color= "blue") + 
+     geom_hline(aes(yintercept = mean(sentiment)), color= "blue") +
+     geom_hline(aes(yintercept = median(sentiment) + 1.96*IQR(sentiment)), color = "red") + 
+     geom_hline(aes(yintercept = median(sentiment) - 1.96*IQR(sentiment)), color = "red") + 
+     theme_tq() +
+     labs(title = "Sentiment Polarity", x = "Twitter User", y= "Sentiment")
+
+ggplotly(g, tooltip = "text") %>% 
+      layout(
+        xaxis = list(
+          rangeslider = list(type = "date")
+        )
+      )
+
+
+## Word cloud 
+
+sentiment_by_word_tbl <- sentiment_bing_tbl %>% count(word, sentiment, sort = TRUE)
+
+sentiment_by_word_tbl %>% 
+  slice(1:100) %>% 
+  mutate(sentiment = factor(sentiment, levels = c("positive", "negative"))) %>%
+  ggplot(aes(label = word, color = sentiment, size = n)) +
+  geom_text_wordcloud_area() + 
+  facet_wrap(~ sentiment, ncol = 2) + 
+  theme_tq() + 
+  scale_color_tq() +
+  scale_size_area(max_size = 16) +
+  labs(title = "Sentiment Word Frequency")
