@@ -1,4 +1,15 @@
-
+library(shiny)
+library(shinythemes)
+library(rtweet)
+library(ggplot2)
+library(dplyr)
+library(ggwordcloud)
+library(tidytext)
+library(textdata)
+library(tidyquant)
+library(tidyr)
+library(stringr)
+library(plotly)
 
 
 
